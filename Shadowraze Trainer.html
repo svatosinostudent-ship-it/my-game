@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shadowraze Trainer</title>
+<style>
+:root{--bg:#ece4dc;--panel:#dcd0c4;--ink:#241812;--muted:#6a5648;--ember:#d9480f;--gold:#b7791f;--ground:#efe3d6;--line:#c4a998;--btn:#241812;--btnt:#ece4dc;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#120c0a;--panel:#241914;--ink:#f1e4d8;--muted:#a08876;--ember:#ff6a2b;--gold:#f0b44a;--ground:#1a1210;--line:#3b2a22;--btn:#ff6a2b;--btnt:#120c0a}}
+:root[data-theme="dark"]{--bg:#120c0a;--panel:#241914;--ink:#f1e4d8;--muted:#a08876;--ember:#ff6a2b;--gold:#f0b44a;--ground:#1a1210;--line:#3b2a22;--btn:#ff6a2b;--btnt:#120c0a}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS","Segoe UI",Verdana,sans-serif;display:flex;justify-content:center}
+main{width:100%;max-width:860px;padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+h1{font-size:1.25rem;margin:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:6px}
+.stats div{background:var(--panel);border-radius:10px;padding:6px 8px;font-size:.72rem;color:var(--muted)}
+.stats b{display:block;font-size:1.1rem;color:var(--ink)}
+canvas{width:100%;aspect-ratio:8/5;display:block;border-radius:12px;touch-action:none;cursor:crosshair;background:var(--ground)}
+.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+button{font:inherit;font-weight:700;font-size:.85rem;background:var(--panel);color:var(--ink);border:2px solid transparent;border-radius:10px;padding:8px 12px;cursor:pointer}
+button[aria-pressed="true"]{border-color:var(--ember)}
+button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.raze{position:relative;flex:1;min-width:90px;padding:12px 6px;background:var(--btn);color:var(--btnt);overflow:hidden}
+.raze i{position:absolute;left:0;bottom:0;height:100%;width:0;background:rgba(0,0,0,.55)}
+.raze span{position:relative}
+.hint{font-size:.76rem;color:var(--muted);margin:0}
+</style>
+</head>
+<body>
+<main>
+<h1>Shadowraze Trainer</h1>
+<div class="stats">
+<div>Hit rate<b id="acc">0%</b></div><div>Hits / casts<b id="hc">0 / 0</b></div><div>Damage<b id="dmg">0</b></div><div>Streak<b id="st">0</b></div><div>Best streak<b id="bs">0</b></div><div>Kills<b id="k">0</b></div>
+</div>
+<canvas id="c" width="800" height="500" aria-label="Arena"></canvas>
+<div class="row">
+<button class="raze" id="b0"><i></i><span>Q · Near (200)</span></button>
+<button class="raze" id="b1"><i></i><span>W · Medium (450)</span></button>
+<button class="raze" id="b2"><i></i><span>E · Far (700)</span></button>
+</div>
+<div class="row" id="modes">
+<button data-m="walk" aria-pressed="true">Walking</button>
+<button data-m="strafe" aria-pressed="false">Strafing</button>
+<button data-m="juke" aria-pressed="false">Juking</button>
+<button id="guide" aria-pressed="true">Range guides</button>
+<button id="reset">Reset stats</button>
+</div>
+<p class="hint">Aim with the mouse (or touch the arena). Press Q, W or E (or the buttons). The raze is locked where you aim when you press, lands after 0.5 s, so lead the target. Radius 250, cooldown shortened to 3 s for practice. Consecutive hits within 8 s stack +50 damage each.</p>
+</main>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),$=function(i){return document.getElementById(i)};
+var WW=1600,WH=1000,RANGE=[200,450,700],RAD=250,CAST=.5,CD=3,TURN=Math.PI*3.4,ESPD=300;
+var sf={x:WW/2,y:WH/2,face:0},mouse={x:WW/2+400,y:WH/2},cd=[0,0,0],lockUntil=0,razes=[],fx=[],nums=[];
+var mode='walk',guide=true,enemy,casts=0,hits=0,dmg=0,streak=0,best=0,kills=0,now=0,mt=0,tx=0,ty=0,svx=1;
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function spawn(){var a=Math.random()*6.28;enemy={x:sf.x+Math.cos(a)*600,y:sf.y+Math.sin(a)*380,vx:0,vy:0,hp:900,stacks:0,stackT:0};mt=0}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function setDir(a,spd){enemy.vx=Math.cos(a)*spd;enemy.vy=Math.sin(a)*spd}
+function aiStep(dt){
+  mt-=dt;
+  if(mode==='walk'){
+    var d=Math.hypot(tx-enemy.x,ty-enemy.y);
+    if(mt<=0||d<30){tx=120+Math.random()*(WW-240);ty=120+Math.random()*(WH-240);mt=6}
+    var a=Math.atan2(ty-enemy.y,tx-enemy.x);setDir(a,ESPD)
+  }else if(mode==='strafe'){
+    if(mt<=0){svx=-svx;mt=.5+Math.random()*.9}
+    var base=Math.atan2(enemy.y-sf.y,enemy.x-sf.x)+Math.PI/2*svx;
+    var dist=Math.hypot(enemy.x-sf.x,enemy.y-sf.y),drift=dist>650?-.5:dist<300?.5:0;
+    setDir(base+drift*svx,ESPD)
+  }else{
+    if(mt<=0){mt=.3+Math.random()*.6;if(Math.random()<.3){enemy.vx=enemy.vy=0}else setDir(Math.random()*6.28,ESPD)}
+  }
+  enemy.x+=enemy.vx*dt;enemy.y+=enemy.vy*dt;
+  if(enemy.x<80||enemy.x>WW-80){enemy.x=clamp(enemy.x,80,WW-80);enemy.vx*=-1}
+  if(enemy.y<80||enemy.y>WH-80){enemy.y=clamp(enemy.y,80,WH-80);enemy.vy*=-1}
+  var dd=Math.hypot(enemy.x-sf.x,enemy.y-sf.y);
+  if(dd<110){enemy.x=sf.x+(enemy.x-sf.x)/dd*110;enemy.y=sf.y+(enemy.y-sf.y)/dd*110}
+  if(enemy.stackT>0){enemy.stackT-=dt;if(enemy.stackT<=0)enemy.stacks=0}
+}
+function cast(i){
+  if(now<lockUntil||cd[i]>now)return;
+  var r=RANGE[i];
+  razes.push({x:sf.x+Math.cos(sf.face)*r,y:sf.y+Math.sin(sf.face)*r,t0:now});
+  cd[i]=now+CD;lockUntil=now+CAST;casts++;hud()
+}
+function land(r){
+  var hit=Math.hypot(enemy.x-r.x,enemy.y-r.y)<=RAD;
+  fx.push({x:r.x,y:r.y,t0:now,hit:hit});
+  if(hit){
+    var d=90+50*enemy.stacks;enemy.stacks++;enemy.stackT=8;enemy.hp-=d;dmg+=d;hits++;streak++;if(streak>best)best=streak;
+    nums.push({x:enemy.x,y:enemy.y-40,t0:now,t:d});
+    if(enemy.hp<=0){kills++;spawn()}
+  }else streak=0;
+  hud()
+}
+function hud(){
+  $('acc').textContent=casts?Math.round(hits/casts*100)+'%':'0%';$('hc').textContent=hits+' / '+casts;
+  $('dmg').textContent=dmg;$('st').textContent=streak;$('bs').textContent=best;$('k').textContent=kills
+}
+function pos(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*WW/r.width,y:(e.clientY-r.top)*WH/r.height}}
+cv.addEventListener('pointermove',function(e){mouse=pos(e)});
+cv.addEventListener('pointerdown',function(e){mouse=pos(e)});
+document.addEventListener('keydown',function(e){
+  var i={KeyQ:0,KeyW:1,KeyE:2}[e.code];
+  if(i!==undefined&&!e.repeat){cast(i);e.preventDefault()}
+});
+['b0','b1','b2'].forEach(function(id,i){$(id).addEventListener('pointerdown',function(e){e.preventDefault();cast(i)})});
+document.querySelectorAll('[data-m]').forEach(function(b){b.onclick=function(){
+  mode=b.dataset.m;document.querySelectorAll('[data-m]').forEach(function(x){x.setAttribute('aria-pressed',x===b)});mt=0}});
+$('guide').onclick=function(){guide=!guide;this.setAttribute('aria-pressed',guide)};
+$('reset').onclick=function(){casts=hits=dmg=streak=best=kills=0;hud()};
+function circle(x,y,r){ctx.beginPath();ctx.arc(x,y,r,0,7)}
+var last=0;
+function frame(t){
+  var dt=Math.min(.05,(t-last)/1000||0);last=t;now=t/1000;
+  if(now>=lockUntil){
+    var want=Math.atan2(mouse.y-sf.y,mouse.x-sf.x),df=Math.atan2(Math.sin(want-sf.face),Math.cos(want-sf.face)),st=TURN*dt;
+    sf.face+=Math.abs(df)<st?df:Math.sign(df)*st
+  }
+  aiStep(dt);
+  for(var i=razes.length-1;i>=0;i--)if(now-razes[i].t0>=CAST){land(razes[i]);razes.splice(i,1)}
+  draw();
+  for(var k=0;k<3;k++){$('b'+k).firstChild.style.width=(cd[k]>now?(cd[k]-now)/CD*100:0)+'%'}
+  requestAnimationFrame(frame)
+}
+function draw(){
+  var ember=css('--ember'),gold=css('--gold'),line=css('--line'),ink=css('--ink');
+  ctx.setTransform(.5,0,0,.5,0,0);ctx.clearRect(0,0,WW,WH);
+  ctx.strokeStyle=line;ctx.lineWidth=3;
+  for(var x=0;x<=WW;x+=200){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,WH);ctx.stroke()}
+  for(var y=0;y<=WH;y+=200){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(WW,y);ctx.stroke()}
+  if(guide){
+    ctx.setLineDash([14,12]);ctx.lineWidth=3;ctx.strokeStyle=gold;ctx.globalAlpha=.55;
+    for(var g=0;g<3;g++){circle(sf.x+Math.cos(sf.face)*RANGE[g],sf.y+Math.sin(sf.face)*RANGE[g],RAD);ctx.stroke()}
+    ctx.globalAlpha=1;ctx.setLineDash([])
+  }
+  razes.forEach(function(r){
+    var p=(now-r.t0)/CAST;ctx.strokeStyle=ember;ctx.lineWidth=5;circle(r.x,r.y,RAD);ctx.stroke();
+    ctx.fillStyle=ember;ctx.globalAlpha=.25+.3*p;circle(r.x,r.y,RAD*p);ctx.fill();ctx.globalAlpha=1
+  });
+  fx=fx.filter(function(f){return now-f.t0<.45});
+  fx.forEach(function(f){var p=(now-f.t0)/.45;ctx.globalAlpha=1-p;ctx.fillStyle=f.hit?ember:line;circle(f.x,f.y,RAD*(.8+.2*p));ctx.fill();ctx.globalAlpha=1});
+  ctx.fillStyle=ink;ctx.globalAlpha=.9;circle(sf.x,sf.y,46);ctx.fill();ctx.globalAlpha=1;
+  ctx.fillStyle=ember;ctx.beginPath();ctx.moveTo(sf.x+Math.cos(sf.face)*80,sf.y+Math.sin(sf.face)*80);
+  ctx.lineTo(sf.x+Math.cos(sf.face+2.5)*40,sf.y+Math.sin(sf.face+2.5)*40);ctx.lineTo(sf.x+Math.cos(sf.face-2.5)*40,sf.y+Math.sin(sf.face-2.5)*40);ctx.closePath();ctx.fill();
+  ctx.fillStyle=css('--bg');ctx.strokeStyle=ink;ctx.lineWidth=6;circle(enemy.x,enemy.y,38);ctx.fill();ctx.stroke();
+  ctx.fillStyle=line;ctx.fillRect(enemy.x-50,enemy.y-70,100,12);ctx.fillStyle=css('--gold');ctx.fillRect(enemy.x-50,enemy.y-70,100*Math.max(0,enemy.hp)/900,12);
+  if(enemy.stacks){ctx.fillStyle=ember;ctx.font='bold 34px sans-serif';ctx.textAlign='center';ctx.fillText('x'+enemy.stacks,enemy.x,enemy.y+12)}
+  nums=nums.filter(function(n){return now-n.t0<.9});
+  nums.forEach(function(n){ctx.globalAlpha=1-(now-n.t0)/.9;ctx.fillStyle=ember;ctx.font='bold 56px sans-serif';ctx.textAlign='center';ctx.fillText(n.t,n.x,n.y-(now-n.t0)*90);ctx.globalAlpha=1})
+}
+spawn();requestAnimationFrame(frame)
+})();
+</script>
+</body>
+</html>
